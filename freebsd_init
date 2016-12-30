@@ -1,0 +1,27 @@
+#!/bin/sh
+
+# PROVIDE: alexa_wetterochs
+# REQUIRE: NETWORKING
+
+#
+# Add the following line to /etc/rc.conf to enable alexa_wetterochs:
+#
+# alexa_wetterochs_enable="YES"
+#
+
+. /etc/rc.subr
+
+name=alexa_wetterochs
+rcvar=alexa_wetterochs_enable
+
+load_rc_config $name
+
+: ${alexa_wetterochs_enable:="NO"}
+: ${alexa_wetterochs_flags:=""}
+
+pidfile=/var/run/wetterochs.pid
+command="/usr/local/bin/wetterochs"
+
+start_cmd="nohup ${command} ${alexa_wetterochs_flags} >> /tmp/alexa_wetterochs.log 2>&1 &"
+
+run_rc_command "$1"
