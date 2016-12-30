@@ -7,6 +7,7 @@ import (
 	"io/ioutil"
 	"log"
 	"os"
+	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -150,12 +151,18 @@ func (c *FeedCache) Set(f *gofeed.Feed) {
 			speech = fmt.Sprintf(`%s<break strength="x-strong"/>Wetter Mail vom %s<break strength="x-strong"/>`, speech, v.PublishedParsed.Format(`<say-as interpret-as="date" format="dm">2.1.</say-as> 15:04`))
 			card = fmt.Sprintf("%s vom %s ", card, v.PublishedParsed.Format(`02.01. 15:04`))
 
-			desc := strings.Replace(v.Description, "\n", " ", -1)
-			desc = strings.Replace(desc, "\r", " ", -1)
-			desc = strings.Replace(desc, "&nbsp;", " ", -1)
-			desc = strings.Replace(desc, "<p>", " ", -1)
-			desc = strings.Replace(desc, "</p>", " ", -1)
-			desc = strings.Replace(desc, "<br>", " ", -1)
+			desc := regexp.MustCompile(`(?i)\n`).ReplaceAllLiteralString(v.Description, " ")
+			desc = regexp.MustCompile(`(?i)\r`).ReplaceAllLiteralString(desc, " ")
+			desc = regexp.MustCompile(`(?i)&nbsp;`).ReplaceAllLiteralString(desc, " ")
+			desc = regexp.MustCompile(`(?i)<p>`).ReplaceAllLiteralString(desc, " ")
+			desc = regexp.MustCompile(`(?i)</p>`).ReplaceAllLiteralString(desc, " ")
+			desc = regexp.MustCompile(`(?i)<br>`).ReplaceAllLiteralString(desc, " ")
+			desc = regexp.MustCompile(`(?i)<br />`).ReplaceAllLiteralString(desc, " ")
+
+			//replace some pharses for better speaking
+			desc = regexp.MustCompile(`(?i)d\.h\.`).ReplaceAllLiteralString(desc, "das heisst")
+			desc = regexp.MustCompile(`(?i)gfs-modell`).ReplaceAllLiteralString(desc, `<say-as interpret-as="spell-out">GFS</say-as><break time="10ms" />Modell`)
+			desc = regexp.MustCompile(`(?i)wetterochs`).ReplaceAllLiteralString(desc, "wetter-ochs")
 
 			for strings.Contains(desc, "  ") {
 				desc = strings.Replace(desc, "  ", " ", -1)
