@@ -19,7 +19,7 @@ import (
 
 const (
 	FEEDURL   = "http://www.wettermail.de/wetter/current/wettermail.rss"
-	CACHEFILE = ".rsscacheWO"
+	CACHEFILE = "/tmp/.rsscacheWO"
 )
 
 var feedCache FeedCache
@@ -142,8 +142,8 @@ func (c *FeedCache) Set(f *gofeed.Feed) {
 	c.lock.Lock()
 	defer c.lock.Unlock()
 
-	if c.entry.Id != f.Updated {
-		for _, v := range f.Items {
+	for _, v := range f.Items {
+		if c.entry.Id != v.Published {
 			speech := fmt.Sprint(`<speak>`)
 			card := fmt.Sprint("Die Wettermail")
 
@@ -172,14 +172,14 @@ func (c *FeedCache) Set(f *gofeed.Feed) {
 
 			speech = fmt.Sprintf("%s</speak>", speech)
 
-			c.entry.Id = f.Updated
+			c.entry.Id = v.Published
 			c.entry.Card = card
 			c.entry.Speech = speech
 
 			SaveCache(&c.entry)
-
-			break
 		}
+
+		break
 	}
 }
 
