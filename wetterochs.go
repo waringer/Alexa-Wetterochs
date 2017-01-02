@@ -23,16 +23,29 @@ const (
 	CACHEFILE = "/tmp/.rsscacheWO"
 )
 
+var (
+	buildstamp string
+	githash    string
+)
+
 var feedCache FeedCache
 
-// Hauptprogramm. Startet den Download des RSS-Feeds und initialisiert
-// den HTTP-Handler.
+// Hauptprogramm. Startet den Download des RSS-Feeds und initialisiert den HTTP-Handler.
 func main() {
 	IP := flag.String("ip", "", "ip to bind to")
 	Port := flag.Uint("port", 3080, "port to use")
 	AppID := flag.String("appid", "", "AppId from Amazon Developer Portal")
 	PidFile := flag.String("pid", "/var/run/wetterochs.pid", "pidfile to write")
+	Version := flag.Bool("v", false, "prints current version and exit")
 	flag.Parse()
+
+	if *Version {
+		fmt.Println("Build:", buildstamp)
+		fmt.Println("Githash:", githash)
+		os.Exit(0)
+	}
+
+	log.Printf("Alexa-Wetterochs startet %s - %s", buildstamp, githash)
 
 	if *AppID == "" {
 		log.Fatalln("Amazon AppID fehlt!")
@@ -92,8 +105,7 @@ func RunAlexa(apps map[string]interface{}, ip, port string) {
 	n.Run(ip + ":" + port)
 }
 
-// Handler für unseren Newsdienst. Dieser Code wird einmal pro Anfrage
-// ausgeführt.
+// Handler für unseren Newsdienst. Dieser Code wird einmal pro Anfrage ausgeführt.
 func WetterochsHandler(echoReq *alexa.EchoRequest, echoResp *alexa.EchoResponse) {
 	log.Printf("----> Request für Intent %s empfangen, UserID %s\n", echoReq.Request.Intent.Name, echoReq.Session.User.UserID)
 
@@ -103,9 +115,7 @@ func WetterochsHandler(echoReq *alexa.EchoRequest, echoResp *alexa.EchoResponse)
 	log.Printf("<---- Antworte mit %s\n", card)
 }
 
-// Da der Newsfeed asynchron im Hintergrund neu geladen wird muss der
-// Zugriff synchronisiert werden. FeedCache realisiert das mit einem
-// Mutex.
+// Da der Newsfeed asynchron im Hintergrund neu geladen wird muss der Zugriff synchronisiert werden. FeedCache realisiert das mit einem Mutex.
 type FeedCache struct {
 	lock  sync.RWMutex
 	entry CacheEntry
@@ -154,6 +164,13 @@ func (c *FeedCache) Set(f *gofeed.Feed) {
 			desc := regexp.MustCompile(`(?i)\n`).ReplaceAllLiteralString(v.Description, " ")
 			desc = regexp.MustCompile(`(?i)\r`).ReplaceAllLiteralString(desc, " ")
 			desc = regexp.MustCompile(`(?i)&nbsp;`).ReplaceAllLiteralString(desc, " ")
+
+			//remove quote of old Mail
+			descs := strings.Split(desc, "<p> Stefan Ochs Wettermail - ")
+			if len(descs) > 1 {
+				desc = descs[0]
+			}
+
 			desc = regexp.MustCompile(`(?i)<p>`).ReplaceAllLiteralString(desc, " ")
 			desc = regexp.MustCompile(`(?i)</p>`).ReplaceAllLiteralString(desc, " ")
 			desc = regexp.MustCompile(`(?i)<br>`).ReplaceAllLiteralString(desc, " ")
@@ -163,12 +180,13 @@ func (c *FeedCache) Set(f *gofeed.Feed) {
 			desc = regexp.MustCompile(`(?i)d\.h\.`).ReplaceAllLiteralString(desc, "das heisst")
 			desc = regexp.MustCompile(`(?i)gfs-modell`).ReplaceAllLiteralString(desc, `<say-as interpret-as="spell-out">GFS</say-as><break time="10ms" />Modell`)
 			desc = regexp.MustCompile(`(?i)wetterochs`).ReplaceAllLiteralString(desc, "wetter-ochs")
+			desc = regexp.MustCompile(`(?i)(\d)-(\d)`).ReplaceAllString(desc, "$1 bis $2")
 
 			for strings.Contains(desc, "  ") {
 				desc = strings.Replace(desc, "  ", " ", -1)
 			}
 
-			descs := strings.Split(desc, "</a>")
+			descs = strings.Split(desc, "</a>")
 			if len(descs) > 1 {
 				speech = fmt.Sprintf(`%s %s<break strength="x-strong"/>%s`, speech, v.Title, descs[1])
 				card = fmt.Sprintf("%s\n%s - %s", card, v.Title, descs[1])
