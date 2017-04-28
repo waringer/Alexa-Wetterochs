@@ -176,6 +176,10 @@ func (c *FeedCache) Set(f *gofeed.Feed) {
 			desc = regexp.MustCompile(`(?i)<br>`).ReplaceAllLiteralString(desc, " ")
 			desc = regexp.MustCompile(`(?i)<br />`).ReplaceAllLiteralString(desc, " ")
 
+			desc = regexp.MustCompile(`(?i)<a.*</a>`).ReplaceAllLiteralString(desc, " ")
+			desc = regexp.MustCompile(`(?i)<`).ReplaceAllLiteralString(desc, " kleiner ")
+			desc = regexp.MustCompile(`(?i)>`).ReplaceAllLiteralString(desc, " größer ")
+
 			//replace some pharses for better speaking
 			desc = regexp.MustCompile(`(?i)d\.h\.`).ReplaceAllLiteralString(desc, "das heisst")
 			desc = regexp.MustCompile(`(?i)gfs-modell`).ReplaceAllLiteralString(desc, `<say-as interpret-as="spell-out">GFS</say-as><break time="10ms" />Modell`)
@@ -186,14 +190,8 @@ func (c *FeedCache) Set(f *gofeed.Feed) {
 				desc = strings.Replace(desc, "  ", " ", -1)
 			}
 
-			descs = strings.Split(desc, "</a>")
-			if len(descs) > 1 {
-				speech = fmt.Sprintf(`%s %s<break strength="x-strong"/>%s`, speech, v.Title, descs[1])
-				card = fmt.Sprintf("%s\n%s - %s", card, v.Title, descs[1])
-			} else {
-				speech = fmt.Sprintf(`%s %s<break strength="x-strong"/>%s`, speech, v.Title, desc)
-				card = fmt.Sprintf("%s\n%s - %s", card, v.Title, desc)
-			}
+			speech = fmt.Sprintf(`%s %s<break strength="x-strong"/>%s`, speech, v.Title, desc)
+			card = fmt.Sprintf("%s\n%s - %s", card, v.Title, desc)
 
 			speech = fmt.Sprintf("%s</speak>", speech)
 
