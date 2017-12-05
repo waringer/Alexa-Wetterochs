@@ -176,7 +176,7 @@ func (c *FeedCache) Set(f *gofeed.Feed) {
 			desc = regexp.MustCompile(`(?i)<br>`).ReplaceAllLiteralString(desc, " ")
 			desc = regexp.MustCompile(`(?i)<br />`).ReplaceAllLiteralString(desc, " ")
 
-			desc = regexp.MustCompile(`(?i)<a.*</a>`).ReplaceAllLiteralString(desc, " ")
+			desc = regexp.MustCompile(`(?i)<a[^<]*</a>`).ReplaceAllLiteralString(desc, " ")
 			desc = regexp.MustCompile(`(?i)<`).ReplaceAllLiteralString(desc, " kleiner ")
 			desc = regexp.MustCompile(`(?i)>`).ReplaceAllLiteralString(desc, " größer ")
 
@@ -194,6 +194,8 @@ func (c *FeedCache) Set(f *gofeed.Feed) {
 			card = fmt.Sprintf("%s\n%s - %s", card, v.Title, desc)
 
 			speech = fmt.Sprintf("%s</speak>", speech)
+
+			log.Printf("-> speech %s\n", speech)
 
 			c.entry.Id = v.Published
 			c.entry.Card = card
