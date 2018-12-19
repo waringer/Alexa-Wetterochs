@@ -187,7 +187,7 @@ func (c *FeedCache) Set(f *gofeed.Feed) {
 			desc = regexp.MustCompile(`(?i)(\d)-(\d)`).ReplaceAllString(desc, "$1 bis $2")
 
 			//remove ad at end of message
-			desc = regexp.MustCompile(`(?i)(\* werbung \*).*`).ReplaceAllString(desc, " ")
+			desc = regexp.MustCompile(`(?i)(\* werbung ).*`).ReplaceAllString(desc, " ")
 
 			for strings.Contains(desc, "  ") {
 				desc = strings.Replace(desc, "  ", " ", -1)
