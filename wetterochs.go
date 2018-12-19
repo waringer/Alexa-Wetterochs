@@ -14,8 +14,8 @@ import (
 
 	"github.com/codegangsta/negroni"
 	"github.com/gorilla/mux"
-	alexa "github.com/mikeflynn/go-alexa/skillserver"
 	"github.com/mmcdole/gofeed"
+	alexa "gitlab.com/waringer/go-alexa/skillserver"
 )
 
 const (
