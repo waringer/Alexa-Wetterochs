@@ -19,27 +19,29 @@ import (
 )
 
 const (
-	FEEDURL   = "http://www.wettermail.de/wetter/current/wettermail.rss"
-	CACHEFILE = "/tmp/.rsscacheWO"
+	feedURL   = "http://www.wettermail.de/wetter/current/wettermail.rss"
+	cacheFile = "/tmp/.rsscacheWO"
 )
+
+// cmdArguments holds the config
+type cmdArguments struct {
+	appID   *string
+	pidFile *string
+	ip      *string
+	port    *uint
+	version *bool
+}
 
 var (
 	buildstamp string
 	githash    string
+	feedCache  feedCacheType
 )
 
-var feedCache FeedCache
-
-// Hauptprogramm. Startet den Download des RSS-Feeds und initialisiert den HTTP-Handler.
 func main() {
-	IP := flag.String("ip", "", "ip to bind to")
-	Port := flag.Uint("port", 3080, "port to use")
-	AppID := flag.String("appid", "", "AppId from Amazon Developer Portal")
-	PidFile := flag.String("pid", "/var/run/wetterochs.pid", "pidfile to write")
-	Version := flag.Bool("v", false, "prints current version and exit")
-	flag.Parse()
+	args := getArguments()
 
-	if *Version {
+	if *args.version {
 		fmt.Println("Build:", buildstamp)
 		fmt.Println("Githash:", githash)
 		os.Exit(0)
@@ -47,56 +49,74 @@ func main() {
 
 	log.Printf("Alexa-Wetterochs startet %s - %s", buildstamp, githash)
 
-	if *AppID == "" {
+	if *args.appID == "" {
 		log.Fatalln("Amazon AppID fehlt!")
 	}
 
-	if *PidFile != "" {
-		WritePid(*PidFile)
+	if *args.pidFile != "" {
+		writePid(*args.pidFile)
 	}
 
 	feedCache.Init()
 
 	log.Println("Erstmaliger Download des Newsfeeds")
-	fp := gofeed.NewParser()
-	feed, err := fp.ParseURL(FEEDURL)
+	stopTickerSignal := initFeed(gofeed.NewParser())
+	defer close(stopTickerSignal)
+
+	var alexaApp = map[string]interface{}{
+		"/echo/wetterochs": alexa.EchoApplication{
+			AppID:    *args.appID,
+			OnIntent: handlerWetterochs,
+			OnLaunch: handlerWetterochs,
+		},
+	}
+
+	runAlexaApp(alexaApp, *args.ip, fmt.Sprintf("%d", *args.port))
+}
+
+// initFeed downloads the feed the first time and start a ticker to reread it every 15 minutes
+func initFeed(fp *gofeed.Parser) (stopTickerSignal chan struct{}) {
+	feed, err := fp.ParseURL(feedURL)
 	if err != nil || len(feed.Items) == 0 {
 		log.Fatalln("Konnte Feed nicht abrufen - Abbruch.")
 	}
+
 	feedCache.Set(feed)
 	ticker := time.NewTicker(15 * time.Minute)
-	quit := make(chan struct{})
+	stopTickerSignal = make(chan struct{})
 	go func() {
 		for {
 			select {
 			case <-ticker.C:
 				log.Println("Update des Newsfeeds")
-				newfeed, err := fp.ParseURL(FEEDURL)
+				newfeed, err := fp.ParseURL(feedURL)
 				if err != nil {
 					log.Println("Konnte Newsfeed nicht updaten: ", err.Error())
 				} else {
 					feedCache.Set(newfeed)
 				}
-			case <-quit:
+			case <-stopTickerSignal:
 				ticker.Stop()
 				return
 			}
 		}
 	}()
-	defer close(quit)
-
-	var Applications = map[string]interface{}{
-		"/echo/wetterochs": alexa.EchoApplication{
-			AppID:    *AppID,
-			OnIntent: WetterochsHandler,
-			OnLaunch: WetterochsHandler,
-		},
-	}
-
-	RunAlexa(Applications, *IP, fmt.Sprintf("%d", *Port))
+	return
 }
 
-func RunAlexa(apps map[string]interface{}, ip, port string) {
+// getArguments reads the command line arguments
+func getArguments() (args cmdArguments) {
+	args.ip = flag.String("ip", "", "ip to bind to")
+	args.port = flag.Uint("port", 3080, "port to use")
+	args.appID = flag.String("appid", "", "AppId from Amazon Developer Portal")
+	args.pidFile = flag.String("pid", "/var/run/wetterochs.pid", "pidfile to write")
+	args.version = flag.Bool("v", false, "prints current version and exit")
+	flag.Parse()
+	return
+}
+
+// runAlexaApp starts the webserver
+func runAlexaApp(apps map[string]interface{}, ip, port string) {
 	router := mux.NewRouter()
 	alexa.Init(apps, router)
 
@@ -105,8 +125,8 @@ func RunAlexa(apps map[string]interface{}, ip, port string) {
 	n.Run(ip + ":" + port)
 }
 
-// Handler für unseren Newsdienst. Dieser Code wird einmal pro Anfrage ausgeführt.
-func WetterochsHandler(echoReq *alexa.EchoRequest, echoResp *alexa.EchoResponse) {
+// handleWetterochs handles any user requests and generate the response
+func handlerWetterochs(echoReq *alexa.EchoRequest, echoResp *alexa.EchoResponse) {
 	log.Printf("----> Request für Intent %s empfangen, UserID %s\n", echoReq.Request.Intent.Name, echoReq.Session.User.UserID)
 
 	card, speech := feedCache.Get()
@@ -115,46 +135,47 @@ func WetterochsHandler(echoReq *alexa.EchoRequest, echoResp *alexa.EchoResponse)
 	log.Printf("<---- Antworte mit %s\n", card)
 }
 
-// Da der Newsfeed asynchron im Hintergrund neu geladen wird muss der Zugriff synchronisiert werden. FeedCache realisiert das mit einem Mutex.
-type FeedCache struct {
+// Da der Newsfeed asynchron im Hintergrund neu geladen wird muss der Zugriff synchronisiert werden.
+// FeedCache realisiert das mit einem Mutex.
+type feedCacheType struct {
 	lock  sync.RWMutex
-	entry CacheEntry
+	entry cacheEntry
 }
 
-type CacheEntry struct {
-	Id     string `json:"id"`
+type cacheEntry struct {
+	ID     string `json:"id"`
 	Card   string `json:"card"`
 	Speech string `json:"speech"`
 }
 
-func (c *FeedCache) Init() {
+func (c *feedCacheType) Init() {
 	c.lock.Lock()
 	defer c.lock.Unlock()
 
-	_, err := ioutil.ReadFile(CACHEFILE)
+	_, err := ioutil.ReadFile(cacheFile)
 	if err != nil {
-		SaveCache(&CacheEntry{})
+		saveCache(&cacheEntry{})
 	}
 
-	err = LoadCache(&c.entry)
+	err = loadCache(&c.entry)
 
 	if err != nil {
 		log.Fatalf("Unable to load cache : %v", err)
 	}
 }
 
-func (c *FeedCache) Get() (string, string) {
+func (c *feedCacheType) Get() (string, string) {
 	c.lock.RLock()
 	defer c.lock.RUnlock()
 	return c.entry.Card, c.entry.Speech
 }
 
-func (c *FeedCache) Set(f *gofeed.Feed) {
+func (c *feedCacheType) Set(f *gofeed.Feed) {
 	c.lock.Lock()
 	defer c.lock.Unlock()
 
 	for _, v := range f.Items {
-		if c.entry.Id != v.Published {
+		if c.entry.ID != v.Published {
 			speech := fmt.Sprint(`<speak>`)
 			card := fmt.Sprint("Die Wettermail")
 
@@ -200,21 +221,21 @@ func (c *FeedCache) Set(f *gofeed.Feed) {
 
 			log.Printf("-> speech %s\n", speech)
 
-			c.entry.Id = v.Published
+			c.entry.ID = v.Published
 			c.entry.Card = card
 			c.entry.Speech = speech
 
-			SaveCache(&c.entry)
+			saveCache(&c.entry)
 		}
 
 		break
 	}
 }
 
-func SaveCache(entry *CacheEntry) {
-	log.Printf("Saving cache to file: %s\n", CACHEFILE)
+func saveCache(entry *cacheEntry) {
+	log.Printf("Saving cache to file: %s\n", cacheFile)
 
-	f, err := os.OpenFile(CACHEFILE, os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0600)
+	f, err := os.OpenFile(cacheFile, os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0600)
 	if err != nil {
 		log.Fatalf("Unable to cache : %v", err)
 	}
@@ -228,8 +249,8 @@ func SaveCache(entry *CacheEntry) {
 	json.NewEncoder(f).Encode(e)
 }
 
-func LoadCache(entry *CacheEntry) error {
-	f, err := os.Open(CACHEFILE)
+func loadCache(entry *cacheEntry) error {
+	f, err := os.Open(cacheFile)
 	if err != nil {
 		return err
 	}
@@ -242,10 +263,10 @@ func LoadCache(entry *CacheEntry) error {
 	return err
 }
 
-func WritePid(PidFile string) {
+func writePid(pidFile string) {
 	pid := os.Getpid()
 
-	f, err := os.OpenFile(PidFile, os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0600)
+	f, err := os.OpenFile(pidFile, os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0600)
 	if err != nil {
 		log.Fatalf("Unable to create pid file : %v", err)
 	}
