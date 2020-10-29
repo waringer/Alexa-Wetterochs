@@ -78,10 +78,12 @@ func main() {
 func initFeed(fp *gofeed.Parser) (stopTickerSignal chan struct{}) {
 	feed, err := fp.ParseURL(feedURL)
 	if err != nil || len(feed.Items) == 0 {
-		log.Fatalln("Konnte Feed nicht abrufen - Abbruch.")
+		//log.Fatalln("Konnte Feed nicht abrufen - Abbruch.")
+		log.Println("Konnte Feed nicht abrufen - cache only.")
+	} else {
+	    feedCache.Set(feed)
 	}
-
-	feedCache.Set(feed)
+	
 	ticker := time.NewTicker(15 * time.Minute)
 	stopTickerSignal = make(chan struct{})
 	go func() {
