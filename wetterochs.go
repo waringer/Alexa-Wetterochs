@@ -15,7 +15,7 @@ import (
 	"github.com/codegangsta/negroni"
 	"github.com/gorilla/mux"
 	"github.com/mmcdole/gofeed"
-	alexa "gitlab.com/waringer/go-alexa/skillserver"
+	alexa "github.com/waringer/go-alexa/skillserver"
 )
 
 const (
@@ -81,9 +81,9 @@ func initFeed(fp *gofeed.Parser) (stopTickerSignal chan struct{}) {
 		//log.Fatalln("Konnte Feed nicht abrufen - Abbruch.")
 		log.Println("Konnte Feed nicht abrufen - cache only.")
 	} else {
-	    feedCache.Set(feed)
+		feedCache.Set(feed)
 	}
-	
+
 	ticker := time.NewTicker(15 * time.Minute)
 	stopTickerSignal = make(chan struct{})
 	go func() {
